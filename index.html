@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leitor de Flipbook Interativo</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PageFlip JS -->
+    <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
+
+    <style>
+        /* Custom styles for flipbook container and scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        
+        .flipbook-stage {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 2000px;
+        }
+
+        .page-flip-element {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            background-color: #ffffff;
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-40 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3 cursor-pointer" onclick="resetToHome()">
+                <div class="bg-brand-600 p-2 rounded-xl text-white shadow-lg shadow-brand-500/30">
+                    <i class="fa-solid fa-book-open text-xl"></i>
+                </div>
+                <span class="font-bold text-xl tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                    FlipStudio
+                </span>
+            </div>
+            
+            <div id="header-actions" class="hidden flex items-center gap-2">
+                <button onclick="resetToHome()" class="px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-all border border-slate-700/50 flex items-center gap-2">
+                    <i class="fa-solid fa-arrow-left"></i>
+                    <span>Novo Arquivo</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto relative">
+
+        <!-- Upload & Input Dashboard (Shown initially) -->
+        <div id="upload-dashboard" class="w-full max-w-2xl transition-all duration-300">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl sm:text-4xl font-extrabold text-white mb-3 tracking-tight">
+                    Transforme PDFs e Imagens em Flipbooks
+                </h1>
+                <p class="text-slate-400 text-sm sm:text-base">
+                    Carregue um arquivo local do seu computador ou importe diretamente do Google Drive para criar um livro digital interativo.
+                </p>
+            </div>
+
+            <!-- Upload Card -->
+            <div class="bg-slate-900/60 rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
+                <!-- Tabs -->
+                <div class="flex border-b border-slate-800 mb-6 gap-4">
+                    <button id="tab-btn-local" onclick="switchTab('local')" class="pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-desktop"></i>
+                        <span>Arquivo Local</span>
+                    </button>
+                    <button id="tab-btn-drive" onclick="switchTab('drive')" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all">
+                        <i class="fa-brands fa-google-drive"></i>
+                        <span>Google Drive</span>
+                    </button>
+                </div>
+
+                <!-- Tab 1: Local Upload Area -->
+                <div id="tab-local" class="space-y-4">
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-brand-500 rounded-xl p-8 text-center transition-all bg-slate-950/40 cursor-pointer group">
+                        <input type="file" id="file-input" class="hidden" accept="application/pdf,image/png,image/jpeg,image/webp" multiple>
+                        <div class="w-16 h-16 bg-slate-800/80 group-hover:bg-brand-500/10 text-slate-400 group-hover:text-brand-500 rounded-2xl flex items-center justify-center mx-auto mb-4 transition-all border border-slate-700/50 group-hover:border-brand-500/30">
+                            <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
+                        </div>
+                        <p class="text-slate-200 font-medium mb-1">Arraste e solte seus arquivos aqui</p>
+                        <p class="text-slate-500 text-xs mb-4">Suporta arquivos PDF ou Múltiplas Imagens (JPG, PNG)</p>
+                        <button onclick="document.getElementById('file-input').click()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-medium transition-all border border-slate-700">
+                            Procurar Arquivos
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Google Drive URL Area -->
+                <div id="tab-drive" class="hidden space-y-4">
+                    <div class="space-y-2">
+                        <label for="drive-url-input" class="block text-sm font-medium text-slate-300">
+                            Link do Arquivo ou ID do Google Drive:
+                        </label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-link"></i>
+                            </div>
+                            <input type="text" id="drive-url-input" placeholder="https://drive.google.com/file/d/1ABC123.../view" class="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+                        </div>
+                        <p class="text-xs text-slate-500">
+                            *Certifique-se de que a permissão do arquivo no Google Drive esteja configurada como <strong>"Qualquer pessoa com o link"</strong>.
+                        </p>
+                    </div>
+                    <button onclick="loadFromGoogleDrive()" class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium text-sm transition-all shadow-lg shadow-brand-600/20 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                        <span>Carregar do Drive</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Features Checklist -->
+            <div class="grid grid-cols-3 gap-4 mt-8 text-center text-xs text-slate-400">
+                <div class="flex flex-col items-center gap-2 p-3 bg-slate-900/30 rounded-xl border border-slate-800/50">
+                    <i class="fa-solid fa-bolt text-brand-500 text-lg"></i>
+                    <span>Visualização Rápida</span>
+                </div>
+                <div class="flex flex-col items-center gap-2 p-3 bg-slate-900/30 rounded-xl border border-slate-800/50">
+                    <i class="fa-solid fa-mobile-screen text-brand-500 text-lg"></i>
+                    <span>Totalmente Responsivo</span>
+                </div>
+                <div class="flex flex-col items-center gap-2 p-3 bg-slate-900/30 rounded-xl border border-slate-800/50">
+                    <i class="fa-solid fa-lock text-brand-500 text-lg"></i>
+                    <span>Processamento Local Seguro</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-spinner" class="hidden flex-col items-center justify-center py-12 space-y-4">
+            <div class="relative w-16 h-16">
+                <div class="absolute inset-0 rounded-full border-4 border-slate-800"></div>
+                <div class="absolute inset-0 rounded-full border-4 border-brand-500 border-t-transparent animate-spin"></div>
+            </div>
+            <div class="text-center">
+                <p id="loading-status" class="text-slate-200 font-medium">Processando documento...</p>
+                <p class="text-xs text-slate-500 mt-1">Isso pode levar alguns segundos dependendo do tamanho do arquivo.</p>
+            </div>
+        </div>
+
+        <!-- Flipbook Viewer Section -->
+        <div id="flipbook-section" class="hidden w-full flex-1 flex flex-col items-center justify-center relative">
+            
+            <!-- Stage/Canvas for PageFlip -->
+            <div id="flipbook-wrapper" class="w-full flex-1 flex items-center justify-center min-h-[400px] sm:min-h-[500px] my-4 overflow-hidden relative">
+                <div id="flipbook-container" class="flipbook-stage"></div>
+            </div>
+
+            <!-- Floating Navigation Controls -->
+            <div class="glass px-4 py-2.5 rounded-2xl flex items-center gap-3 sm:gap-6 shadow-2xl mt-auto z-30">
+                <button onclick="flipbook.flipPrev()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all" title="Página Anterior">
+                    <i class="fa-solid fa-chevron-left text-lg"></i>
+                </button>
+                
+                <div class="text-xs sm:text-sm font-medium text-slate-300 min-w-[80px] text-center">
+                    <span id="current-page">1</span> / <span id="total-pages">1</span>
+                </div>
+
+                <button onclick="flipbook.flipNext()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all" title="Próxima Página">
+                    <i class="fa-solid fa-chevron-right text-lg"></i>
+                </button>
+
+                <div class="h-4 w-px bg-slate-700/60"></div>
+
+                <button onclick="toggleFullScreen()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all" title="Tela Cheia">
+                    <i class="fa-solid fa-expand text-lg" id="fullscreen-icon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Alert Notification Box -->
+        <div id="toast" class="fixed bottom-6 right-6 hidden transform transition-all duration-300 z-50">
+            <div class="bg-slate-800 border border-slate-700 text-slate-200 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+                <i id="toast-icon" class="fa-solid fa-circle-info text-brand-500"></i>
+                <span id="toast-message" class="text-sm font-medium">Mensagem de aviso</span>
+            </div>
+        </div>
+    </main>
+
+    <!-- App Logic JavaScript -->
+    <script>
+        // Set worker path for PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let flipbook = null;
+        let renderedPages = [];
+
+        // Tab Switching
+        function switchTab(tab) {
+            const localBtn = document.getElementById('tab-btn-local');
+            const driveBtn = document.getElementById('tab-btn-drive');
+            const localContent = document.getElementById('tab-local');
+            const driveContent = document.getElementById('tab-drive');
+
+            if (tab === 'local') {
+                localBtn.className = "pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all";
+                driveBtn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
+                localContent.classList.remove('hidden');
+                driveContent.classList.add('hidden');
+            } else {
+                driveBtn.className = "pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all";
+                localBtn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
+                driveContent.classList.remove('hidden');
+                localContent.classList.add('hidden');
+            }
+        }
+
+        // Drag and Drop Handling
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-brand-500', 'bg-brand-500/10');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-brand-500', 'bg-brand-500/10');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFiles(files);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFiles(e.target.files);
+            }
+        });
+
+        // Main File Router
+        async function handleFiles(files) {
+            const firstFile = files[0];
+
+            if (firstFile.type === 'application/pdf') {
+                const arrayBuffer = await firstFile.arrayBuffer();
+                processPDF(arrayBuffer);
+            } else if (firstFile.type.startsWith('image/')) {
+                processImages(Array.from(files));
+            } else {
+                showToast('Por favor, selecione arquivos PDF ou Imagens (JPG, PNG).', 'error');
+            }
+        }
+
+        // Process PDF File into canvases
+        async function processPDF(dataBuffer) {
+            showLoading(true, 'Lendo arquivo PDF...');
+            try {
+                const loadingTask = pdfjsLib.getDocument({ data: dataBuffer });
+                const pdf = await loadingTask.promise;
+                const totalPages = pdf.numPages;
+                const images = [];
+
+                for (let i = 1; i <= totalPages; i++) {
+                    updateLoadingStatus(`Renderizando página ${i} de ${totalPages}...`);
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    images.push(canvas.toDataURL('image/jpeg', 0.85));
+                }
+
+                initFlipbook(images);
+            } catch (err) {
+                console.error(err);
+                showToast('Erro ao carregar PDF. Verifique se o arquivo não está corrompido.', 'error');
+                showLoading(false);
+            }
+        }
+
+        // Process List of Images
+        async function processImages(fileList) {
+            showLoading(true, 'Carregando imagens...');
+            
+            // Sort files by name
+            fileList.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            const imageUrls = [];
+            for (let file of fileList) {
+                if (file.type.startsWith('image/')) {
+                    const dataUrl = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsDataURL(file);
+                    });
+                    imageUrls.push(dataUrl);
+                }
+            }
+
+            if (imageUrls.length > 0) {
+                initFlipbook(imageUrls);
+            } else {
+                showToast('Nenhuma imagem válida encontrada.', 'error');
+                showLoading(false);
+            }
+        }
+
+        // Google Drive Link Helper
+        async function loadFromGoogleDrive() {
+            const input = document.getElementById('drive-url-input').value.trim();
+            if (!input) {
+                showToast('Cole o link do Google Drive primeiro.', 'error');
+                return;
+            }
+
+            // Extract Google Drive File ID
+            let fileId = input;
+            const matches = input.match(/\/d\/([a-zA-Z0-9_-]+)/) || input.match(/id=([a-zA-Z0-9_-]+)/);
+            if (matches && matches[1]) {
+                fileId = matches[1];
+            }
+
+            showLoading(true, 'Conectando ao Google Drive...');
+
+            // Direct download link for public drive files
+            const driveDirectUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+            // Proxy link to avoid CORS restrictions on Google Drive direct streams
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(driveDirectUrl)}`;
+
+            try {
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error('Não foi possível obter o arquivo');
+                
+                const blob = await response.blob();
+                const arrayBuffer = await blob.arrayBuffer();
+                
+                await processPDF(arrayBuffer);
+            } catch (err) {
+                console.error(err);
+                showToast('Erro ao carregar do Drive. Verifique as permissões de compartilhamento.', 'error');
+                showLoading(false);
+            }
+        }
+
+        // Build and render StPageFlip Flipbook
+        function initFlipbook(imageSrcArray) {
+            showLoading(true, 'Montando Flipbook 3D...');
+
+            const container = document.getElementById('flipbook-container');
+            container.innerHTML = ''; // Clear previous
+
+            // Calculate optimal dimensions based on screen size
+            const isMobile = window.innerWidth < 640;
+            const bookWidth = isMobile ? Math.min(window.innerWidth - 32, 360) : 450;
+            const bookHeight = isMobile ? Math.min(window.innerHeight - 200, 500) : 600;
+
+            // Destroy previous instance if exists
+            if (flipbook) {
+                try { flipbook.destroy(); } catch(e) {}
+            }
+
+            // Create page DOM elements
+            imageSrcArray.forEach((src, idx) => {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page-flip-element bg-white flex items-center justify-center overflow-hidden';
+                
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = 'w-full h-full object-contain pointer-events-none select-none';
+                pageDiv.appendChild(img);
+
+                container.appendChild(pageDiv);
+            });
+
+            // Initialize PageFlip instance
+            setTimeout(() => {
+                flipbook = new St.PageFlip(container, {
+                    width: bookWidth,
+                    height: bookHeight,
+                    size: "fixed",
+                    minWidth: 280,
+                    maxWidth: 600,
+                    minHeight: 380,
+                    maxHeight: 800,
+                    maxShadowOpacity: 0.5,
+                    showCover: true,
+                    mobileScrollSupport: false
+                });
+
+                flipbook.loadFromHTML(document.querySelectorAll('.page-flip-element'));
+
+                // Events
+                document.getElementById('total-pages').textContent = flipbook.getPageCount();
+                document.getElementById('current-page').textContent = flipbook.getCurrentPageIndex() + 1;
+
+                flipbook.on('flip', (e) => {
+                    document.getElementById('current-page').textContent = e.data + 1;
+                });
+
+                // UI Visibility Toggle
+                showLoading(false);
+                document.getElementById('upload-dashboard').classList.add('hidden');
+                document.getElementById('flipbook-section').classList.remove('hidden');
+                document.getElementById('header-actions').classList.remove('hidden');
+            }, 300);
+        }
+
+        // Reset to Landing / Upload view
+        function resetToHome() {
+            if (flipbook) {
+                try { flipbook.destroy(); } catch(e){}
+                flipbook = null;
+            }
+            document.getElementById('flipbook-container').innerHTML = '';
+            document.getElementById('file-input').value = '';
+            document.getElementById('drive-url-input').value = '';
+
+            document.getElementById('flipbook-section').classList.add('hidden');
+            document.getElementById('header-actions').classList.add('hidden');
+            document.getElementById('upload-dashboard').classList.remove('hidden');
+        }
+
+        // UI Feedback & Utility Functions
+        function showLoading(show, message = 'Carregando...') {
+            const spinner = document.getElementById('loading-spinner');
+            const dashboard = document.getElementById('upload-dashboard');
+            
+            if (show) {
+                updateLoadingStatus(message);
+                spinner.classList.remove('hidden');
+                spinner.classList.add('flex');
+                dashboard.classList.add('opacity-40', 'pointer-events-none');
+            } else {
+                spinner.classList.add('hidden');
+                spinner.classList.remove('flex');
+                dashboard.classList.remove('opacity-40', 'pointer-events-none');
+            }
+        }
+
+        function updateLoadingStatus(text) {
+            document.getElementById('loading-status').textContent = text;
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMsg.textContent = message;
+
+            if (type === 'error') {
+                toastIcon.className = 'fa-solid fa-circle-exclamation text-rose-500';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-info text-brand-500';
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 4000);
+        }
+
+        function toggleFullScreen() {
+            const elem = document.getElementById('flipbook-section');
+            const icon = document.getElementById('fullscreen-icon');
+
+            if (!document.fullscreenElement) {
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen();
+                } else if (elem.webkitRequestFullscreen) {
+                    elem.webkitRequestFullscreen();
+                }
+                icon.className = 'fa-solid fa-compress text-lg';
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+                icon.className = 'fa-solid fa-expand text-lg';
+            }
+        }
+
+        // Resize Event Handling to keep proportions clear
+        window.addEventListener('resize', () => {
+            if (flipbook) {
+                const isMobile = window.innerWidth < 640;
+                const bookWidth = isMobile ? Math.min(window.innerWidth - 32, 360) : 450;
+                const bookHeight = isMobile ? Math.min(window.innerHeight - 200, 500) : 600;
+                flipbook.updateFromHtml();
+            }
+        });
+    </script>
+</body>
+</html>
