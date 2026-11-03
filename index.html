@@ -57,7 +57,17 @@
 
         .page-flip-element {
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-            background-color: #ffffff;
+            background-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .page-flip-element img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: transparent;
         }
 
         /* Glassmorphism utility */
@@ -114,6 +124,10 @@
                         <i class="fa-solid fa-desktop"></i>
                         <span>Arquivo Local</span>
                     </button>
+                    <button id="tab-btn-url" onclick="switchTab('url')" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-link"></i>
+                        <span>URL do PDF</span>
+                    </button>
                     <button id="tab-btn-drive" onclick="switchTab('drive')" class="pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all">
                         <i class="fa-brands fa-google-drive"></i>
                         <span>Google Drive</span>
@@ -135,7 +149,29 @@
                     </div>
                 </div>
 
-                <!-- Tab 2: Google Drive URL Area -->
+                <!-- Tab 2: Direct PDF URL Area -->
+                <div id="tab-url" class="hidden space-y-4">
+                    <div class="space-y-2">
+                        <label for="pdf-url-input" class="block text-sm font-medium text-slate-300">
+                            URL do Arquivo PDF:
+                        </label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
+                                <i class="fa-solid fa-globe"></i>
+                            </div>
+                            <input type="text" id="pdf-url-input" placeholder="https://exemplo.com/documento.pdf" class="w-full pl-10 pr-4 py-2.5 bg-slate-950/60 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+                        </div>
+                        <p class="text-xs text-slate-500">
+                            *Cole o link direto de um PDF público para gerar um link compartilhável do seu Flipbook.
+                        </p>
+                    </div>
+                    <button onclick="loadFromDirectUrl()" class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-medium text-sm transition-all shadow-lg shadow-brand-600/20 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Carregar PDF da URL</span>
+                    </button>
+                </div>
+
+                <!-- Tab 3: Google Drive URL Area -->
                 <div id="tab-drive" class="hidden space-y-4">
                     <div class="space-y-2">
                         <label for="drive-url-input" class="block text-sm font-medium text-slate-300">
@@ -211,6 +247,11 @@
 
                 <div class="h-4 w-px bg-slate-700/60"></div>
 
+                <button id="share-btn" onclick="shareFlipbook()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all flex items-center gap-1.5 text-xs font-semibold" title="Copiar Link Compartilhável">
+                    <i class="fa-solid fa-share-nodes text-lg"></i>
+                    <span class="hidden sm:inline">Compartilhar</span>
+                </button>
+
                 <button onclick="toggleFullScreen()" class="p-2 text-slate-300 hover:text-white hover:bg-slate-800/80 rounded-xl transition-all" title="Tela Cheia">
                     <i class="fa-solid fa-expand text-lg" id="fullscreen-icon"></i>
                 </button>
@@ -232,25 +273,45 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let flipbook = null;
-        let renderedPages = [];
+        let activeSourceUrl = null;
+        let docAspectRatio = 0.707; // Default A4 aspect ratio (width/height)
+
+        // Check URL parameters on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pdfParam = urlParams.get('pdf');
+            if (pdfParam) {
+                activeSourceUrl = pdfParam;
+                loadFromUrl(pdfParam);
+            }
+        });
 
         // Tab Switching
         function switchTab(tab) {
             const localBtn = document.getElementById('tab-btn-local');
+            const urlBtn = document.getElementById('tab-btn-url');
             const driveBtn = document.getElementById('tab-btn-drive');
             const localContent = document.getElementById('tab-local');
+            const urlContent = document.getElementById('tab-url');
             const driveContent = document.getElementById('tab-drive');
+
+            // Reset tabs styling
+            [localBtn, urlBtn, driveBtn].forEach(btn => {
+                if(btn) btn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
+            });
+            [localContent, urlContent, driveContent].forEach(content => {
+                if(content) content.classList.add('hidden');
+            });
 
             if (tab === 'local') {
                 localBtn.className = "pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all";
-                driveBtn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
                 localContent.classList.remove('hidden');
-                driveContent.classList.add('hidden');
+            } else if (tab === 'url') {
+                urlBtn.className = "pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all";
+                urlContent.classList.remove('hidden');
             } else {
                 driveBtn.className = "pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-500 flex items-center gap-2 transition-all";
-                localBtn.className = "pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
                 driveContent.classList.remove('hidden');
-                localContent.classList.add('hidden');
             }
         }
 
@@ -287,6 +348,7 @@
 
         // Main File Router
         async function handleFiles(files) {
+            activeSourceUrl = null; // Local file cannot generate a public URL
             const firstFile = files[0];
 
             if (firstFile.type === 'application/pdf') {
@@ -299,6 +361,40 @@
             }
         }
 
+        // Load PDF directly from a public URL
+        async function loadFromDirectUrl() {
+            const url = document.getElementById('pdf-url-input').value.trim();
+            if (!url) {
+                showToast('Insira uma URL válida de arquivo PDF.', 'error');
+                return;
+            }
+            activeSourceUrl = url;
+            loadFromUrl(url);
+        }
+
+        async function loadFromUrl(url) {
+            showLoading(true, 'Buscando PDF da URL...');
+            try {
+                // Try fetching directly, or fallback to proxy if CORS fails
+                let arrayBuffer;
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error('Falha ao baixar');
+                    arrayBuffer = await response.arrayBuffer();
+                } catch (e) {
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                    const response = await fetch(proxyUrl);
+                    if (!response.ok) throw new Error('Falha ao baixar via proxy');
+                    arrayBuffer = await response.arrayBuffer();
+                }
+                await processPDF(arrayBuffer);
+            } catch (err) {
+                console.error(err);
+                showToast('Não foi possível carregar o PDF desta URL. Verifique as permissões CORS.', 'error');
+                showLoading(false);
+            }
+        }
+
         // Process PDF File into canvases
         async function processPDF(dataBuffer) {
             showLoading(true, 'Lendo arquivo PDF...');
@@ -308,10 +404,15 @@
                 const totalPages = pdf.numPages;
                 const images = [];
 
+                // Calculate first page aspect ratio to fit container dynamically
+                const firstPage = await pdf.getPage(1);
+                const firstViewport = firstPage.getViewport({ scale: 1 });
+                docAspectRatio = firstViewport.width / firstViewport.height;
+
                 for (let i = 1; i <= totalPages; i++) {
                     updateLoadingStatus(`Renderizando página ${i} de ${totalPages}...`);
                     const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 1.5 });
+                    const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for crisp quality
 
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
@@ -319,7 +420,7 @@
                     canvas.width = viewport.width;
 
                     await page.render({ canvasContext: context, viewport: viewport }).promise;
-                    images.push(canvas.toDataURL('image/jpeg', 0.85));
+                    images.push(canvas.toDataURL('image/png'));
                 }
 
                 initFlipbook(images);
@@ -350,6 +451,12 @@
             }
 
             if (imageUrls.length > 0) {
+                // Determine aspect ratio from first image
+                const img = new Image();
+                img.src = imageUrls[0];
+                await img.decode();
+                docAspectRatio = img.width / img.height;
+
                 initFlipbook(imageUrls);
             } else {
                 showToast('Nenhuma imagem válida encontrada.', 'error');
@@ -365,33 +472,15 @@
                 return;
             }
 
-            // Extract Google Drive File ID
             let fileId = input;
             const matches = input.match(/\/d\/([a-zA-Z0-9_-]+)/) || input.match(/id=([a-zA-Z0-9_-]+)/);
             if (matches && matches[1]) {
                 fileId = matches[1];
             }
 
-            showLoading(true, 'Conectando ao Google Drive...');
-
-            // Direct download link for public drive files
             const driveDirectUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
-            // Proxy link to avoid CORS restrictions on Google Drive direct streams
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(driveDirectUrl)}`;
-
-            try {
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error('Não foi possível obter o arquivo');
-                
-                const blob = await response.blob();
-                const arrayBuffer = await blob.arrayBuffer();
-                
-                await processPDF(arrayBuffer);
-            } catch (err) {
-                console.error(err);
-                showToast('Erro ao carregar do Drive. Verifique as permissões de compartilhamento.', 'error');
-                showLoading(false);
-            }
+            activeSourceUrl = driveDirectUrl;
+            loadFromUrl(driveDirectUrl);
         }
 
         // Build and render StPageFlip Flipbook
@@ -399,22 +488,24 @@
             showLoading(true, 'Montando Flipbook 3D...');
 
             const container = document.getElementById('flipbook-container');
-            container.innerHTML = ''; // Clear previous
+            container.innerHTML = ''; 
 
-            // Calculate optimal dimensions based on screen size
+            // Calculate height and page width according to aspect ratio
             const isMobile = window.innerWidth < 640;
-            const bookWidth = isMobile ? Math.min(window.innerWidth - 32, 360) : 450;
-            const bookHeight = isMobile ? Math.min(window.innerHeight - 200, 500) : 600;
+            const maxHeight = isMobile ? Math.min(window.innerHeight - 180, 500) : Math.min(window.innerHeight - 160, 750);
+            
+            // Single page width based on height and aspect ratio
+            const bookHeight = maxHeight;
+            const bookWidth = Math.round(bookHeight * docAspectRatio);
 
-            // Destroy previous instance if exists
             if (flipbook) {
                 try { flipbook.destroy(); } catch(e) {}
             }
 
             // Create page DOM elements
-            imageSrcArray.forEach((src, idx) => {
+            imageSrcArray.forEach((src) => {
                 const pageDiv = document.createElement('div');
-                pageDiv.className = 'page-flip-element bg-white flex items-center justify-center overflow-hidden';
+                pageDiv.className = 'page-flip-element bg-transparent flex items-center justify-center overflow-hidden';
                 
                 const img = document.createElement('img');
                 img.src = src;
@@ -430,11 +521,11 @@
                     width: bookWidth,
                     height: bookHeight,
                     size: "fixed",
-                    minWidth: 280,
-                    maxWidth: 600,
-                    minHeight: 380,
-                    maxHeight: 800,
-                    maxShadowOpacity: 0.5,
+                    minWidth: 200,
+                    maxWidth: 800,
+                    minHeight: 300,
+                    maxHeight: 1000,
+                    maxShadowOpacity: 0.4,
                     showCover: true,
                     mobileScrollSupport: false
                 });
@@ -454,7 +545,34 @@
                 document.getElementById('upload-dashboard').classList.add('hidden');
                 document.getElementById('flipbook-section').classList.remove('hidden');
                 document.getElementById('header-actions').classList.remove('hidden');
+
+                // Toggle share button state
+                const shareBtn = document.getElementById('share-btn');
+                if (shareBtn) {
+                    shareBtn.style.display = activeSourceUrl ? 'flex' : 'none';
+                }
             }, 300);
+        }
+
+        // Generate and Copy Shareable Link
+        function shareFlipbook() {
+            if (!activeSourceUrl) {
+                showToast('Para compartilhar, o arquivo precisa ser aberto via URL pública ou Google Drive.', 'error');
+                return;
+            }
+
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareUrl = `${baseUrl}?pdf=${encodeURIComponent(activeSourceUrl)}`;
+
+            // Copy to clipboard
+            const tempInput = document.createElement('input');
+            tempInput.value = shareUrl;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            showToast('Link do Flipbook copiado para a área de transferência!', 'info');
         }
 
         // Reset to Landing / Upload view
@@ -463,9 +581,16 @@
                 try { flipbook.destroy(); } catch(e){}
                 flipbook = null;
             }
+            // Clean URL query params without reloading
+            if (window.history.pushState) {
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                window.history.pushState({path:newUrl}, '', newUrl);
+            }
+
             document.getElementById('flipbook-container').innerHTML = '';
             document.getElementById('file-input').value = '';
             document.getElementById('drive-url-input').value = '';
+            document.getElementById('pdf-url-input').value = '';
 
             document.getElementById('flipbook-section').classList.add('hidden');
             document.getElementById('header-actions').classList.add('hidden');
